@@ -7,7 +7,7 @@ import json
 # Настройки
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 SCORES_FILE = "scores.json"
-TRIGGER_PHRASE = "Выебать овнера говнопроекта"
+TRIGGER_PHRASE = "выебать овнера говнопроекта"  # в нижнем регистре для сравнения
 
 # Проверка токена
 if not TOKEN:
@@ -24,7 +24,7 @@ def load_scores():
     """Загружает баллы из файла"""
     try:
         if os.path.exists(SCORES_FILE):
-            with open(SCORES_FILE, 'r') as f:
+            with open(SCORES_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         return {}
     except Exception as e:
@@ -33,14 +33,14 @@ def load_scores():
 
 def save_scores(scores):
     """Сохраняет баллы в файл"""
-    with open(SCORES_FILE, 'w') as f:
-        json.dump(scores, f, indent=4)
+    with open(SCORES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(scores, f, indent=4, ensure_ascii=False)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     user = update.effective_user
     user_id = str(user.id)
-    username = f"@{user.username}" if user.username else user.first_name
+    username = user.username if user.username else user.first_name  # Без @
     
     scores = load_scores()
     if user_id not in scores:
@@ -78,11 +78,13 @@ async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик триггерной фразы"""
-    if TRIGGER_PHRASE.lower() in update.message.text.lower():
+    """Обработчик обычных сообщений"""
+    text = update.message.text.lower()  # Приводим к нижнему регистру
+    
+    if TRIGGER_PHRASE in text:  # Проверяем без учета регистра
         user = update.effective_user
         user_id = str(user.id)
-        username = f"@{user.username}" if user.username else user.first_name
+        username = user.username if user.username else user.first_name  # Без @
         
         scores = load_scores()
         if user_id not in scores:
