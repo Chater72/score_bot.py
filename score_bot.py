@@ -2,14 +2,16 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
+import json
 
 # Настройки
-TOKEN = os.getenv('TELEGRAM_TOKEN')  # Получаем токен из переменных окружения
-ADMIN_ID = int(os.getenv('ADMIN_ID', 0))  # ID админа (опционально)
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+SCORES_FILE = "scores.json"
+TRIGGER_PHRASE = "Выебать овнера говнопроекта"
 
 # Проверка токена
 if not TOKEN:
-    raise ValueError("❌ Токен бота не найден! Проверьте настройки Render")
+    raise ValueError("❌ Токен не найден!")
 
 # Настройка логов
 logging.basicConfig(
@@ -18,52 +20,87 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def load_scores():
+    """Загружает баллы из файла"""
+    try:
+        if os.path.exists(SCORES_FILE):
+            with open(SCORES_FILE, 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        logger.error(f"Ошибка загрузки баллов: {e}")
+        return {}
+
+def save_scores(scores):
+    """Сохраняет баллы в файл"""
+    with open(SCORES_FILE, 'w') as f:
+        json.dump(scores, f, indent=4)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     user = update.effective_user
+    user_id = str(user.id)
     username = f"@{user.username}" if user.username else user.first_name
+    
+    scores = load_scores()
+    if user_id not in scores:
+        scores[user_id] = {"username": username, "score": 0}
+        save_scores(scores)
     
     await update.message.reply_text(
         f"👋 Привет, {username}!\n\n"
-        "Я работающий бот без системы баллов\n"
-        "Доступные команды:\n"
-        "/help - Показать это сообщение\n"
-        "/info - Информация о боте"
+        f"Пиши «{TRIGGER_PHRASE}» для баллов.\n"
+        "🔝 Топ: /top"
     )
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /help"""
-    await update.message.reply_text(
-        "ℹ️ Справка по боту:\n\n"
-        "/start - Начать работу\n"
-        "/info - Информация\n"
-        "/help - Эта справка"
-    )
-
-async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /info"""
-    await update.message.reply_text(
-        "🤖 Бот создан @tolik_scripter\n"
-        "Версия: 1.0 (без системы баллов)\n"
-        "Работает на Render.com"
-    )
+async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /top"""
+    scores = load_scores()
+    
+    if not scores:
+        await update.message.reply_text("📭 Топ пуст")
+        return
+    
+    # Сортировка по баллам
+    sorted_scores = sorted(
+        scores.items(),
+        key=lambda x: x[1]["score"],
+        reverse=True
+    )[:10]  # Топ-10
+    
+    # Формирование сообщения
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    msg = "🏆 Топ игроков:\n\n"
+    
+    for i, (user_id, data) in enumerate(sorted_scores):
+        msg += f"{medals[i]} {data['username']}: {data['score']} баллов\n"
+    
+    await update.message.reply_text(msg)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик обычных сообщений"""
-    text = update.message.text
-    if "привет" in text.lower():
-        await update.message.reply_text("И тебе привет! 😊")
+    """Обработчик триггерной фразы"""
+    if TRIGGER_PHRASE.lower() in update.message.text.lower():
+        user = update.effective_user
+        user_id = str(user.id)
+        username = f"@{user.username}" if user.username else user.first_name
+        
+        scores = load_scores()
+        if user_id not in scores:
+            scores[user_id] = {"username": username, "score": 0}
+        
+        scores[user_id]["score"] += 1
+        save_scores(scores)
+        
+        await update.message.reply_text(
+            f"🎉 +1 балл! Твой счет: {scores[user_id]['score']}\n"
+            "Посмотреть топ: /top"
+        )
 
 def main():
-    """Запуск бота"""
     app = Application.builder().token(TOKEN).build()
     
-    # Регистрация обработчиков команд
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("info", info))
-    
-    # Обработчик обычных сообщений
+    app.add_handler(CommandHandler("top", top))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     logger.info("✅ Бот запущен!")
